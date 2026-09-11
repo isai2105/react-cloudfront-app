@@ -1,4 +1,4 @@
-import { ArrowCounterClockwise, Minus, Plus, Trash } from '@phosphor-icons/react'
+import { ArrowCounterClockwiseIcon, MinusIcon, PlusIcon, TrashIcon } from '@phosphor-icons/react'
 import { useReducer } from 'react'
 
 import { Reveal } from './Reveal'
@@ -70,8 +70,12 @@ function Cart() {
       <div>
         <div className="flex flex-wrap gap-2">
           {catalogue.map((item) => (
-            <Button key={item.id} variant="secondary" onClick={() => dispatch({ type: 'added', line: item })}>
-              <Plus size={14} weight="bold" /> {item.name}
+            <Button
+              key={item.id}
+              variant="secondary"
+              onClick={() => dispatch({ type: 'added', line: item })}
+            >
+              <PlusIcon size={14} weight="bold" /> {item.name}
             </Button>
           ))}
         </div>
@@ -92,7 +96,7 @@ function Cart() {
                       className="rounded-full p-1.5 text-zinc-600 hover:bg-zinc-200/60 dark:text-zinc-300 dark:hover:bg-zinc-800"
                       onClick={() => dispatch({ type: 'quantity_changed', id: l.id, delta: -1 })}
                     >
-                      <Minus size={14} weight="bold" />
+                      <MinusIcon size={14} weight="bold" />
                     </button>
                     <span className="w-6 text-center font-mono tabular-nums">{l.qty}</span>
                     <button
@@ -100,14 +104,14 @@ function Cart() {
                       className="rounded-full p-1.5 text-zinc-600 hover:bg-zinc-200/60 dark:text-zinc-300 dark:hover:bg-zinc-800"
                       onClick={() => dispatch({ type: 'quantity_changed', id: l.id, delta: 1 })}
                     >
-                      <Plus size={14} weight="bold" />
+                      <PlusIcon size={14} weight="bold" />
                     </button>
                     <button
                       aria-label={`Remove ${l.name}`}
                       className="ml-2 rounded-full p-1.5 text-zinc-600 hover:bg-zinc-200/60 dark:text-zinc-300 dark:hover:bg-zinc-800"
                       onClick={() => dispatch({ type: 'removed', id: l.id })}
                     >
-                      <Trash size={14} weight="bold" />
+                      <TrashIcon size={14} weight="bold" />
                     </button>
                   </span>
                 </li>
@@ -118,7 +122,9 @@ function Cart() {
 
         <div className="mt-4 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-800">
           <span className="text-sm text-zinc-500 dark:text-zinc-400">Total</span>
-          <span className="font-mono text-lg tabular-nums text-zinc-900 dark:text-zinc-50">{total} EUR</span>
+          <span className="font-mono text-lg text-zinc-900 tabular-nums dark:text-zinc-50">
+            {total} EUR
+          </span>
         </div>
       </div>
 
@@ -131,7 +137,7 @@ function Cart() {
             onClick={() => dispatch({ type: 'reset' })}
             disabled={state.log.length === 0}
           >
-            <ArrowCounterClockwise size={12} weight="bold" /> reset
+            <ArrowCounterClockwiseIcon size={12} weight="bold" /> reset
           </Button>
         </div>
         <ol className="mt-3 max-h-56 flex-1 overflow-y-auto rounded-surface bg-zinc-100 p-3 font-mono text-[13px] leading-6 text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">
@@ -152,8 +158,8 @@ export function ReducerDemo() {
       <Reveal>
         <H2>When several updates touch the same object, describe events, not edits.</H2>
         <Lede>
-          A reducer turns a pile of setState calls into one function you can read top to bottom
-          and test without rendering anything. Every change to the cart below is an action.
+          A reducer turns a pile of setState calls into one function you can read top to bottom and
+          test without rendering anything. Every change to the cart below is an action.
         </Lede>
       </Reveal>
 
@@ -172,16 +178,15 @@ const [state, dispatch] = useReducer(reducer, initial)`}</Code>
         <div className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
           <p>
             The rule of thumb: reach for <span className="font-mono text-[13px]">useReducer</span>{' '}
-            when the next state depends on the previous one in more than one way, or when two
-            fields must change together. Otherwise{' '}
-            <span className="font-mono text-[13px]">useState</span> is shorter and just as correct.
+            when the next state depends on the previous one in more than one way, or when two fields
+            must change together. Otherwise <span className="font-mono text-[13px]">useState</span>{' '}
+            is shorter and just as correct.
           </p>
           <p className="mt-4">
             Name actions after what happened, in the past tense. A reducer that receives{' '}
             <span className="font-mono text-[13px]">set_quantity</span> is a setter with extra
-            steps; one that receives{' '}
-            <span className="font-mono text-[13px]">quantity_changed</span> can decide what that
-            means.
+            steps; one that receives <span className="font-mono text-[13px]">quantity_changed</span>{' '}
+            can decide what that means.
           </p>
         </div>
       </Reveal>

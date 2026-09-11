@@ -10,7 +10,10 @@ export function Nav() {
   return (
     <header className="fixed inset-x-0 top-0 z-20 h-16 border-b border-zinc-200/70 bg-zinc-50/80 backdrop-blur-md dark:border-zinc-800/70 dark:bg-zinc-950/80">
       <div className="mx-auto flex h-full w-full max-w-6xl items-center justify-between px-4">
-        <a href="#top" className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+        <a
+          href="#top"
+          className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50"
+        >
           React state, explained
         </a>
         <nav aria-label="Sections" className="hidden items-center gap-6 md:flex">

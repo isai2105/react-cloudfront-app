@@ -1,6 +1,7 @@
-import { Moon, Plus, Sun } from '@phosphor-icons/react'
-import { createContext, memo, useContext, useRef, useState } from 'react'
+import { MoonIcon, PlusIcon, SunIcon } from '@phosphor-icons/react'
+import { createContext, memo, useContext, useMemo, useState } from 'react'
 
+import { useRenderCount } from '../hooks/useRenderCount'
 import { Reveal } from './Reveal'
 import { Button, Code, H2, Lede, Section } from './ui'
 
@@ -14,15 +15,7 @@ const ThemeContext = createContext<Theme>('light')
 const CountContext = createContext(0)
 
 // Every consumer below is memoised, so the only thing that can re-render it
-// is the context it reads. The render counter is incremented during render on
-// purpose: it is the instrument, not a pattern to copy.
-function useRenderCount() {
-  const renders = useRef(0)
-  // oxlint-disable-next-line react/refs -- the render count is the demo
-  renders.current += 1
-  // oxlint-disable-next-line react/refs -- the render count is the demo
-  return renders.current
-}
+// is the context it reads.
 
 function Consumer({ label, value, renders }: { label: string; value: string; renders: number }) {
   return (
@@ -30,7 +23,8 @@ function Consumer({ label, value, renders }: { label: string; value: string; ren
       <p className="font-mono text-xs text-zinc-500 dark:text-zinc-400">{label}</p>
       <p className="mt-2 font-mono text-xl text-zinc-900 dark:text-zinc-50">{value}</p>
       <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-        renders: <span className="font-mono tabular-nums text-zinc-900 dark:text-zinc-50">{renders}</span>
+        renders:{' '}
+        <span className="font-mono text-zinc-900 tabular-nums dark:text-zinc-50">{renders}</span>
       </p>
     </div>
   )
@@ -61,10 +55,13 @@ function Demo() {
   const [theme, setTheme] = useState<Theme>('light')
   const [count, setCount] = useState(0)
   const [mode, setMode] = useState<Mode>('single')
+  // Memoised so the provider's identity only changes when its contents do;
+  // both readers still re-render on either change, which is the point.
+  const single = useMemo(() => ({ theme, count }), [theme, count])
 
   const consumers =
     mode === 'single' ? (
-      <SingleContext.Provider value={{ theme, count }}>
+      <SingleContext.Provider value={single}>
         <ThemeReaderSingle />
         <CountReaderSingle />
       </SingleContext.Provider>
@@ -79,39 +76,44 @@ function Demo() {
 
   return (
     <div className="rounded-surface border border-zinc-200 bg-zinc-100 p-5 dark:border-zinc-800 dark:bg-zinc-900/60">
-      <div
-        role="radiogroup"
-        aria-label="Context shape"
-        className="inline-flex rounded-full border border-zinc-300 p-0.5 dark:border-zinc-700"
-      >
+      {/* Native radios: the browser supplies the group semantics and arrow-key
+          navigation that a `role="radio"` button would have to reimplement. */}
+      <fieldset className="inline-flex rounded-full border border-zinc-300 p-0.5 dark:border-zinc-700">
+        <legend className="sr-only">Context shape</legend>
         {(['single', 'split'] as const).map((m) => (
-          <button
+          <label
             key={m}
-            role="radio"
-            aria-checked={mode === m}
-            onClick={() => setMode(m)}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              mode === m
-                ? 'bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900'
-                : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
-            }`}
+            className="cursor-pointer rounded-full px-3 py-1 text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 has-checked:bg-zinc-900 has-checked:text-zinc-50 has-focus-visible:outline-2 has-focus-visible:outline-offset-2 dark:text-zinc-400 dark:hover:text-zinc-100 dark:has-checked:bg-zinc-100 dark:has-checked:text-zinc-900"
           >
+            <input
+              type="radio"
+              name="context-shape"
+              value={m}
+              checked={mode === m}
+              onChange={() => setMode(m)}
+              className="sr-only"
+            />
             {m === 'single' ? 'One context, one object' : 'Two contexts, one value each'}
-          </button>
+          </label>
         ))}
-      </div>
+      </fieldset>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">{consumers}</div>
 
       <div className="mt-5 flex flex-wrap gap-2">
         <Button variant="secondary" onClick={() => setCount((c) => c + 1)}>
-          <Plus size={14} weight="bold" /> count
+          <PlusIcon size={14} weight="bold" /> count
         </Button>
         <Button
           variant="secondary"
           onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
         >
-          {theme === 'light' ? <Moon size={14} weight="bold" /> : <Sun size={14} weight="bold" />} theme
+          {theme === 'light' ? (
+            <MoonIcon size={14} weight="bold" />
+          ) : (
+            <SunIcon size={14} weight="bold" />
+          )}{' '}
+          theme
         </Button>
       </div>
 
