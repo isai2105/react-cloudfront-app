@@ -84,6 +84,11 @@ jobs:
       actions: read # cross-run artifact download and `gh run view` (§1.5)
     outputs:
       site_url: ${{ steps.discover.outputs.site_url }}
+      # The commit that was promoted — the run's head, which the tripwire
+      # below proved is also the artifact's stamp. e2e-live asserts the live
+      # stamp against it, so the browser suite verifies *this* deploy and
+      # not merely that something is served.
+      sha: ${{ steps.provenance.outputs.head_sha }}
     env:
       # Written once so every `run:` below reads the same values. Inputs and
       # variables are never interpolated into a script body.
@@ -307,3 +312,4 @@ jobs:
     uses: ./.github/workflows/e2e-live.yml # zizmor: ignore[self-repository]
     with:
       site_url: ${{ needs.deploy.outputs.site_url }}
+      expected_sha: ${{ needs.deploy.outputs.sha }}

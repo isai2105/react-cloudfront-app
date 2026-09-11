@@ -161,11 +161,11 @@ them silently; the scripts under `scripts/` are type-checked as JavaScript throu
 
 **Commit convention.** Types are exactly `feat`, `fix`, `docs`, `style`, `refactor`, `test`,
 `build`, `ci`, `chore`, `perf` and `revert` — the same list the `pr-title` check in
-[`ci.yml`](.github/workflows/ci.yml) enforces on pull-request titles. The intended path onto
+[`ci.yml`](.github/workflows/ci.yml) enforces on pull-request titles. The only path onto
 `main` is a squash merge whose subject is the PR title, so the title check is the gate and
-commitlint is its shift-left copy for the subject. The repository settings that make squash the
-only merge method and put a ruleset on `main` are the last step of the scaffold and are not yet
-applied; until they are, the checks run but nothing requires them.
+commitlint is its shift-left copy for the subject. That is enforced by the repository, not
+assumed: squash is the only merge method the repository allows, and the ruleset on `main`
+requires the three `ci.yml` checks — see [Repository settings](#repository-settings).
 
 ---
 
@@ -185,8 +185,9 @@ applied; until they are, the checks run but nothing requires them.
   delegates to this repository, against `PLAYWRIGHT_BASE_URL`: the document and a deep link come
   back `200` under `no-cache` and the policy; a hashed asset carries
   `public, max-age=31536000, immutable`; a missing asset is `403` exactly, never `404`; a dotted
-  last segment is not rewritten; `build-info.json` names a commit. It never runs on a pull request
-  — there is usually no environment standing — and touches no AWS API.
+  last segment is not rewritten; `build-info.json` names a commit — and, when `EXPECTED_SHA` is
+  set, that commit. It never runs on a pull request — there is usually no environment standing —
+  and touches no AWS API.
 
 ---
 
@@ -221,6 +222,44 @@ ESLint family with `typescript`, then everything else by dependency type. Every 
 produces passes `pr-title`. **One obligation is a person's, not a tool's:** on an actions bump,
 check that the new SHA still declares `using: node24` in its `action.yml` — no linter holds that
 rule.
+
+### Repository settings
+
+Some of what the pipeline relies on is a setting rather than a file, so it cannot be reviewed in
+a diff. Each was applied once with `gh api` as the last step of the scaffold, and each is read
+back below, so the claim and its verification sit together. The shapes follow the
+infrastructure repository's
+[`BOOTSTRAP.md`](https://github.com/isai2105/terraform-aws-static-site/blob/main/docs/BOOTSTRAP.md)
+§7; this is the copy for one repository, not a second runbook.
+
+- **Ruleset `protect-main`** on the default branch: `deletion`, `non_fast_forward`,
+  `pull_request` and `required_status_checks` = `ci`, `pr-title`, `workflow-lint`; no bypass
+  actors. The pull-request rule requires no approvals: a single maintainer cannot approve their
+  own PR, and a rule bypassed on every use is an off switch with extra steps.
+  `gh api repos/isai2105/react-cloudfront-app/rules/branches/main --jq '[.[].type]'`
+- **Squash is the only merge method**, in the ruleset and in the repository; the squash subject
+  is the PR title and its body the PR description.
+  `gh api repos/isai2105/react-cloudfront-app --jq '{allow_merge_commit,allow_rebase_merge,squash_merge_commit_title}'`
+- **`sha_pinning_required`** on Actions — hardening rule 1, held by GitHub as well as by
+  `workflow-lint`.
+  `gh api repos/isai2105/react-cloudfront-app/actions/permissions --jq .sha_pinning_required`
+- **Dependabot alerts and security updates** on — an npm tree is where advisories arrive.
+  `gh api repos/isai2105/react-cloudfront-app/automated-security-fixes --jq .enabled`
+- **CodeQL default setup**, `javascript-typescript`. This is the whole of CodeQL here: there is
+  no `codeql.yml`, so if the setting were off nothing would scan and no missing-workflow error
+  would say so. Its `Analyze (javascript-typescript)` check is advisory, not in the ruleset: it
+  adds minutes to every pull request for a scanner that also runs weekly on `main`, and the
+  three required checks are the ones that gate what this repository produces.
+  `gh api repos/isai2105/react-cloudfront-app/code-scanning/default-setup --jq '{state,languages}'`
+- **Repository variables** `AWS_ACCOUNT_ID` and `AWS_REGION`, which `deploy.yml` reads.
+  `gh variable list`
+
+`main` is the OIDC trust anchor — the deploy role trusts `…:ref:refs/heads/main` and nothing
+else (§1.3) — which is why it is protected before any environment exists: without the ruleset,
+any push to `main` mints a deployable token, and "required" checks are required by nothing.
+`strict_required_status_checks_policy` is off deliberately, as in the infrastructure repository:
+requiring a branch to be current with `main` re-runs every check on every merge and buys nothing
+back while nothing else is in flight.
 
 ---
 
@@ -257,13 +296,17 @@ the 90-day retention. The job:
    commit's.
 
 A second job then runs the live suite through [`e2e-live.yml`](.github/workflows/e2e-live.yml)
-with `contents: read` and nothing else; the OIDC grant stops at the first job. `e2e-live.yml` is
-also dispatchable by hand with a `site_url`, for an environment that is already standing.
+with `contents: read` and nothing else; the OIDC grant stops at the first job. It passes the
+promoted commit as `expected_sha`, so the suite asserts the live `build-info.json` names that
+commit — the difference between "a build is served" and "the build we deployed is served".
+`e2e-live.yml` is also dispatchable by hand with a `site_url`, for an environment that is
+already standing; `expected_sha` is optional there and, left empty, the stamp gets a shape check
+only.
 
-**Repository variables** the deploy reads and which must be set before the first dispatch:
-`AWS_ACCOUNT_ID` and `AWS_REGION` (`us-east-2`, the environment's `aws_region`). They are
-identifiers, not credentials — the contract's own instruction is that stable values live in
-variables and the per-cycle ones in SSM. Neither is set today.
+**Repository variables** the deploy reads: `AWS_ACCOUNT_ID` and `AWS_REGION` (`us-east-2`, the
+environment's `aws_region`). They are identifiers, not credentials — the contract's own
+instruction is that stable values live in variables and the per-cycle ones in SSM. Both are set
+(`gh variable list`), from the infrastructure repository's `bootstrap` outputs.
 
 ### Not yet verified
 

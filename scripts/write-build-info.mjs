@@ -3,15 +3,16 @@
 //
 // Why `public/`: Vite copies that directory into `dist/` verbatim, so the file
 // lands at `dist/build-info.json` — unhashed, at the root — which is where the
-// deploy contract expects it (DEPLOY_CONTRACT.md §3: "the commit SHA stamped
-// inside the artefact"; §4.1 syncs and invalidates `/build-info.json` as a
-// mutable object alongside `index.html`). It is git-ignored because it is
-// build output that merely happens to be staged in `public/`.
+// deploy contract expects it (DEPLOY_CONTRACT.md §3: the commit SHA is
+// stamped inside the artifact as build-info.json; §4.1 syncs and invalidates
+// `/build-info.json` as a mutable object alongside `index.html`). It is
+// git-ignored because it is build output that merely happens to be staged in
+// `public/`.
 //
 // Why every build: `scripts/check-dist.mjs` asserts the stamp unconditionally,
 // and the stamp is what proves *which* build is live (§4.3) — this repo's
 // deploy compares the live `/build-info.json` to the one in the promoted
-// artefact, so a build without a stamp is not deployable.
+// artifact, so a build without a stamp is not deployable.
 //
 // The two contract fields are `sha` and `builtAt`, exactly. `dirty` is an
 // addition for humans: a local build from a modified tree is stamped with the
