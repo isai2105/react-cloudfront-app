@@ -10,6 +10,8 @@ import { readdir, readFile } from 'node:fs/promises'
 import { extname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { assetReferences } from './lib/assets.mjs'
+
 const DIST = fileURLToPath(new URL('../dist/', import.meta.url))
 const CSP_TEXT_TYPES = ['html', 'css', 'js']
 
@@ -96,10 +98,7 @@ function noInlineScriptOrStyle(html) {
  * @param {string} html
  */
 function assetsAreHashed(html) {
-  const refs = [
-    ...html.matchAll(/\s(?:src|href)\s*=\s*(?:"(\/assets\/[^"]*)"|'(\/assets\/[^']*)')/gi),
-  ].map((m) => m[1] ?? m[2] ?? '')
-  return refs
+  return assetReferences(html)
     .filter((ref) => !HASHED_ASSET.test(ref))
     .map((ref) => `unhashed asset reference ${ref}`)
 }

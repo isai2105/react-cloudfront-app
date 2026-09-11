@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { normalizeCsp, parseCsp } from './csp.mjs'
+import { diffCsp, normalizeCsp, parseCsp } from './csp.mjs'
 
 describe('normalizeCsp', () => {
   it('leaves an already canonical policy unchanged', () => {
@@ -35,5 +35,28 @@ describe('normalizeCsp', () => {
 describe('parseCsp', () => {
   it('maps a directive with no sources to an empty list', () => {
     expect(parseCsp('upgrade-insecure-requests').get('upgrade-insecure-requests')).toEqual([])
+  })
+})
+
+describe('diffCsp', () => {
+  const expected = "default-src 'none'; img-src 'self' data:; script-src 'self'"
+
+  it('is empty for two serialisations of the same policy', () => {
+    expect(
+      diffCsp(expected, "script-src 'self'; img-src data: 'self'; default-src 'none'"),
+    ).toEqual([])
+  })
+
+  it('names a directive whose sources changed, with both sides', () => {
+    expect(diffCsp(expected, "default-src 'none'; img-src 'self'; script-src 'self'")).toEqual([
+      "img-src: expected ['self' data:], live ['self']",
+    ])
+  })
+
+  it('names missing and unexpected directives', () => {
+    expect(diffCsp(expected, "default-src 'none'; img-src 'self' data:; font-src 'self'")).toEqual([
+      "unexpected directive: font-src 'self'",
+      "missing directive:    script-src 'self'",
+    ])
   })
 })

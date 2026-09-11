@@ -1,0 +1,309 @@
+# Promote a build that `main` already produced to a standing environment.
+#
+# This workflow never builds. It takes the id of a green `ci` run on `main`,
+# downloads the `dist` artifact that run uploaded, and syncs it to the bucket
+# behind the CloudFront distribution that terraform-aws-static-site applied —
+# the interface documented in that repository's docs/DEPLOY_CONTRACT.md, cited
+# below by section. A rollback is the same workflow with an older `run_id`.
+#
+# It is `workflow_dispatch` only, and that is the contract's §8 rather than a
+# gap: the target environment is applied, exercised and torn down, and `prod`
+# is deliberately un-applied between the runs that use it. A push-triggered
+# deploy would be red whenever no environment stands, which is the normal
+# state, and that red would carry no information. A dispatch is a person
+# saying an environment is standing.
+#
+# Two jobs. `deploy` assumes the deploy role, discovers the environment from
+# SSM, gates on the live CSP, syncs in the contract's order and verifies what
+# is served. `e2e-live` then runs the browser suite through e2e-live.yml with
+# `contents: read` and nothing else — the OIDC grant stops at the first job.
+#
+# The six hardening rules, and who holds each, are listed in ci.yml's header;
+# `workflow-lint` there audits this file with the same two tools.
+#
+# Repository variables this reads (set once per deployment, contract §1.1 —
+# identifiers, not credentials, and unmasked so an AssumeRole refusal names
+# the ARN it actually tried):
+#
+#   AWS_ACCOUNT_ID   the account the environment is applied in
+#   AWS_REGION       `aws_region` in envs/<env>/terraform.tfvars — us-east-2
+
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy to
+        type: choice
+        options: [stage, prod]
+        required: true
+      run_id:
+        description: Id of a green `ci` run on `main` whose `dist` artifact to promote
+        type: string
+        required: true
+
+# Nothing by default; the deploy job asks for exactly the three scopes the
+# contract names (§1.5) and the e2e job for one.
+permissions: {}
+
+# One group per environment, queued rather than cancelled. §4.1: the sync
+# order is the deploy's only concurrency control, so two dispatches to the
+# same environment must not interleave. `cancel-in-progress: false` because a
+# run cancelled mid-sync is safe for viewers — assets land before the document
+# — but reports "cancelled" instead of anything about the deploy; the later
+# dispatch waits and then runs whole.
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy
+    runs-on: ubuntu-24.04
+    # `aws cloudfront wait invalidation-completed` alone polls 20 s × 30
+    # attempts (the CLI's InvalidationCompleted waiter): ten minutes before
+    # the CLI gives up on its own. Plus two syncs, a provenance check and
+    # the verification, with headroom so a slow success never trips this.
+    timeout-minutes: 30
+    # No `environment:` key, and its absence is load-bearing. GitHub's
+    # environment claim *replaces* the ref claim in the OIDC subject, and the
+    # deploy role trusts `…:ref:refs/heads/main` byte for byte (§1.3, §1.4).
+    # A job that declares one fails at AssumeRoleWithWebIdentity before it
+    # has done anything an error message would explain. The ref half of that
+    # subject is why the first step below refuses a dispatch from any branch
+    # but `main`. An approval gate, if one is ever wanted, goes on a separate
+    # job that only waits.
+    permissions:
+      id-token: write # the OIDC token (§1.5)
+      # The checkout: scripts/, csp.txt.
+      contents: read
+      # Reading *another* run's artifact is an Actions API read, and so is
+      # `gh run view` on it. Without this the download 403s and the reader
+      # goes to debug a trust policy that is correct.
+      actions: read # cross-run artifact download and `gh run view` (§1.5)
+    outputs:
+      site_url: ${{ steps.discover.outputs.site_url }}
+    env:
+      # Written once so every `run:` below reads the same values. Inputs and
+      # variables are never interpolated into a script body.
+      ENVIRONMENT: ${{ inputs.environment }}
+      RUN_ID: ${{ inputs.run_id }}
+    steps:
+      - name: Check the dispatching ref
+        # The deploy role trusts the OIDC subject `…:ref:refs/heads/main` byte
+        # for byte (§1.3), and `workflow_dispatch` lets a person pick any
+        # branch. Without this, a dispatch from a feature branch passes the
+        # provenance check, downloads the artifact, runs *that branch's*
+        # scripts and csp.txt, and then dies at AssumeRoleWithWebIdentity
+        # with STS's "Not authorized" — the least informative failure in the
+        # file. Cheapest check first, and the one that names its cause.
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::deploy must be dispatched from main: the deploy role trusts the subject …:ref:refs/heads/main (DEPLOY_CONTRACT §1.3), got $GITHUB_REF"
+            exit 1
+          fi
+
+      - name: Check the repository variables
+        # Fail here, naming the variable, rather than inside the credentials
+        # action with an ARN that has a hole in it.
+        env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          case "$AWS_ACCOUNT_ID" in
+            [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+            *) echo "::error::repository variable AWS_ACCOUNT_ID is not a 12-digit account id"; exit 1 ;;
+          esac
+          if [ -z "$AWS_REGION" ]; then
+            echo "::error::repository variable AWS_REGION is not set"; exit 1
+          fi
+
+      - name: Check the run being promoted
+        id: provenance
+        # Before anything is downloaded. Only `main` pushes upload `dist`
+        # (ci.yml), but that is a convention of one file; this is the check.
+        # Every field is asserted rather than the artifact merely looked for:
+        # a `dist` from a green `pull_request` run does not exist today, and
+        # the day one does, the `event` line is what refuses it.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          case "$RUN_ID" in
+            ''|*[!0-9]*) echo "::error::run_id must be a number, got '$RUN_ID'"; exit 1 ;;
+          esac
+          run="$(gh run view "$RUN_ID" --json headBranch,headSha,conclusion,workflowName,event)"
+          echo "$run"
+          for check in \
+            '.workflowName == "ci"' \
+            '.event == "push"' \
+            '.headBranch == "main"' \
+            '.conclusion == "success"'
+          do
+            if [ "$(printf '%s' "$run" | jq -r "$check")" != "true" ]; then
+              echo "::error::run $RUN_ID is not a green ci push run on main (failed: $check)"
+              exit 1
+            fi
+          done
+          echo "head_sha=$(printf '%s' "$run" | jq -r .headSha)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The two scripts this job runs use Node's standard library alone, so
+      # there is no `pnpm install` here: a deploy that installs the app's
+      # devDependencies to run two files is a deploy whose credential is in
+      # the environment while several hundred packages' lifecycle scripts run.
+      # `cache:` is left unset for the same reason — there is no store to
+      # restore.
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Download the dist artifact from that run
+        # Cross-run, so `github-token` is required (the action's README) and
+        # the job's `actions: read` is what makes `github.token` sufficient.
+        # `repository:` is the default, written out so "never another
+        # repository's build" is visible in the file.
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist
+          run-id: ${{ inputs.run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+
+      - name: Check the artifact is that run's build
+        # The stamp inside the artifact (§3) must name the commit the run
+        # built. It always does when ci.yml wrote it — `prebuild` stamps
+        # GITHUB_SHA — so this is a tripwire, not a step that can fail on a
+        # good day: it catches an artifact written by anything other than
+        # that pipeline before that artifact is given a credential.
+        env:
+          HEAD_SHA: ${{ steps.provenance.outputs.head_sha }}
+        run: |
+          test -f dist/index.html || { echo "::error::dist/index.html is missing from the artifact"; exit 1; }
+          stamped="$(jq -r .sha dist/build-info.json)"
+          if [ "$stamped" != "$HEAD_SHA" ]; then
+            echo "::error::dist/build-info.json is stamped $stamped but run $RUN_ID built $HEAD_SHA"
+            exit 1
+          fi
+          echo "promoting $stamped"
+
+      - name: Assume the deploy role
+        # The role name is contract (§1.1): `react-cloudfront-app-deploy-<env>`
+        # with no path, composed from the account variable and the input and
+        # nothing else. No `audience:` — the trust policy conditions on the
+        # action's default, `sts.amazonaws.com` (§1.2). No
+        # `role-duration-seconds` — the role caps sessions at one hour, which
+        # is also the action's default.
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/react-cloudfront-app-deploy-${{ inputs.environment }}
+          aws-region: ${{ vars.AWS_REGION }}
+          # What CloudTrail records: which environment, which run.
+          role-session-name: deploy-${{ inputs.environment }}-${{ github.run_id }}
+
+      - name: Discover the environment
+        id: discover
+        # Three `get-parameter` calls (§2): the role holds `ssm:GetParameter`,
+        # singular, and `get-parameters` / `get-parameters-by-path` are
+        # different IAM actions that come back AccessDenied. Read on every
+        # deploy and never cached — a re-applied environment has a new bucket
+        # name, distribution id and hostname. Against a torn-down environment
+        # this fails with ParameterNotFound naming the environment (§8), which
+        # is the correct failure and is not swallowed.
+        run: |
+          param() {
+            aws ssm get-parameter --name "/static-site/${ENVIRONMENT}/$1" \
+              --query Parameter.Value --output text
+          }
+          bucket="$(param bucket_name)"
+          distribution="$(param cloudfront_distribution_id)"
+          site_url="$(param site_url)"
+          case "$site_url" in
+            https://*) ;;
+            *) echo "::error::site_url parameter is not an https URL: '$site_url'"; exit 1 ;;
+          esac
+          {
+            echo "bucket=$bucket"
+            echo "distribution=$distribution"
+            echo "site_url=$site_url"
+          } >> "$GITHUB_OUTPUT"
+          echo "deploying to $site_url"
+
+      - name: Check the live CSP matches csp.txt
+        # §6.3: the gate before the first upload. The policy is owned by the
+        # infrastructure repository; this one holds a copy and refuses to
+        # deploy a build tested against one policy under another.
+        env:
+          SITE_URL: ${{ steps.discover.outputs.site_url }}
+        run: node scripts/check-csp.mjs
+
+      - name: Sync the build to the bucket
+        # The four commands of §4.1, in this order, with nothing added: no
+        # `--delete` (§5 — old assets must outlive cached documents that
+        # reference them, and the role holds no s3:DeleteObject), no `--acl`
+        # (the bucket is BucketOwnerEnforced and refuses one), no
+        # `--cache-control` (the response headers policies override it).
+        # Hashed assets first, root files second, the document last, so no
+        # viewer ever receives an index.html whose chunks are not there yet.
+        # The invalidation names the mutable objects and no others.
+        env:
+          BUCKET: ${{ steps.discover.outputs.bucket }}
+          DIST: ${{ steps.discover.outputs.distribution }}
+        run: |
+          # 1. Hashed assets first.
+          aws s3 sync dist/assets "s3://${BUCKET}/assets"
+
+          # 2. The remaining root files, including the build-info.json stamp.
+          aws s3 sync dist "s3://${BUCKET}" --exclude "assets/*" --exclude "index.html"
+
+          # 3. The pointer, last.
+          aws s3 cp dist/index.html "s3://${BUCKET}/index.html"
+
+          # 4. Invalidate the mutable objects, and only those.
+          INVALIDATION_ID="$(aws cloudfront create-invalidation \
+            --distribution-id "${DIST}" \
+            --paths / /index.html /build-info.json \
+            --query Invalidation.Id --output text)"
+          echo "invalidation ${INVALIDATION_ID}"
+
+          # The waiter polls GetInvalidation; without it the verification
+          # below asserts against whatever the edge happened to hold.
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "${DIST}" \
+            --id "${INVALIDATION_ID}"
+
+      - name: Verify what the distribution serves
+        # §4.2 and §4.3: `GET /` is 200, every asset the document references
+        # is 200, and the live build-info.json carries the sha of the artifact
+        # that was just uploaded — compared against `dist/`, never against
+        # `github.sha`, because the promoted commit is the artifact's, not
+        # this run's. The job is not allowed to pass without this.
+        env:
+          SITE_URL: ${{ steps.discover.outputs.site_url }}
+          DIST_DIR: dist
+        run: node scripts/verify-deploy.mjs
+
+  # The browser suite, as a called workflow so a person can also run it
+  # against a standing environment without redeploying. A caller job's
+  # `permissions` are the ceiling for the called workflow, and this one grants
+  # `contents: read` alone: the deploy job's `id-token: write` never reaches
+  # the job that runs Playwright.
+  e2e-live:
+    needs: deploy
+    permissions:
+      contents: read
+    # The workspace-relative form rather than GitHub's newer `$/` one: the
+    # pinned actionlint (1.7.12) predates that syntax and rejects it, and a
+    # reusable-workflow reference is resolved by GitHub from this ref at
+    # parse time either way, so the filesystem concern behind the audit does
+    # not apply here. Switch when actionlint accepts `$/`.
+    uses: ./.github/workflows/e2e-live.yml # zizmor: ignore[self-repository]
+    with:
+      site_url: ${{ needs.deploy.outputs.site_url }}
