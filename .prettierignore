@@ -1,7 +1,10 @@
-# Build output and lockfile are machine-written.
+# Build, test and coverage output and the lockfile are machine-written.
 dist
 pnpm-lock.yaml
 public/build-info.json
+coverage
+test-results
+playwright-report
 # Vendored skill markdown is upstream's; reformatting it would make every
 # skill update a noisy diff.
 .claude/skills

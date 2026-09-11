@@ -26,11 +26,23 @@
     "typescript/no-non-null-assertion": "error",
     "import/no-cycle": "error",
     "import/no-duplicates": "error",
-    // `import './index.css'` is how Vite pulls the stylesheet into the graph.
-    "import/no-unassigned-import": ["error", { "allow": ["**/*.css"] }],
+    // `import './index.css'` is how Vite pulls the stylesheet into the graph;
+    // the jest-dom import registers matchers as a side effect by design.
+    "import/no-unassigned-import": [
+      "error",
+      { "allow": ["**/*.css", "@testing-library/jest-dom/vitest"] }
+    ],
     // The automatic JSX runtime (`jsx: react-jsx` in tsconfig) imports the
     // factory itself; this rule predates it.
     "react/react-in-jsx-scope": "off"
   },
-  "ignorePatterns": ["dist", "node_modules", ".claude", "public/build-info.json"]
+  "ignorePatterns": [
+    "dist",
+    "node_modules",
+    ".claude",
+    "public/build-info.json",
+    "coverage",
+    "test-results",
+    "playwright-report"
+  ]
 }

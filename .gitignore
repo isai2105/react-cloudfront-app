@@ -10,6 +10,9 @@ public/build-info.json
 test-results/
 playwright-report/
 
+# Vitest coverage report (`pnpm test:coverage`)
+coverage/
+
 # Logs
 logs
 *.log

@@ -1,21 +1,9 @@
 import { ArrowCounterClockwiseIcon, MinusIcon, PlusIcon, TrashIcon } from '@phosphor-icons/react'
 import { useReducer } from 'react'
 
+import { type Line, cartReducer, initial } from './cartReducer'
 import { Reveal } from './Reveal'
 import { Button, Code, H2, Lede, Section } from './ui'
-
-type Line = { id: number; name: string; qty: number; price: number }
-
-type State = {
-  lines: Line[]
-  log: string[]
-}
-
-type Action =
-  | { type: 'added'; line: Omit<Line, 'qty'> }
-  | { type: 'quantity_changed'; id: number; delta: number }
-  | { type: 'removed'; id: number }
-  | { type: 'reset' }
 
 const catalogue: Omit<Line, 'qty'>[] = [
   { id: 1, name: 'Notebook, dotted', price: 9 },
@@ -23,46 +11,8 @@ const catalogue: Omit<Line, 'qty'>[] = [
   { id: 3, name: 'Ink, blue-black', price: 12 },
 ]
 
-const initial: State = { lines: [], log: [] }
-
-function reducer(state: State, action: Action): State {
-  const entry = describe(action)
-  switch (action.type) {
-    case 'added': {
-      const existing = state.lines.find((l) => l.id === action.line.id)
-      const lines = existing
-        ? state.lines.map((l) => (l.id === action.line.id ? { ...l, qty: l.qty + 1 } : l))
-        : [...state.lines, { ...action.line, qty: 1 }]
-      return { lines, log: [entry, ...state.log] }
-    }
-    case 'quantity_changed': {
-      const lines = state.lines
-        .map((l) => (l.id === action.id ? { ...l, qty: l.qty + action.delta } : l))
-        .filter((l) => l.qty > 0)
-      return { lines, log: [entry, ...state.log] }
-    }
-    case 'removed':
-      return { lines: state.lines.filter((l) => l.id !== action.id), log: [entry, ...state.log] }
-    case 'reset':
-      return initial
-  }
-}
-
-function describe(action: Action): string {
-  switch (action.type) {
-    case 'added':
-      return `added #${action.line.id}`
-    case 'quantity_changed':
-      return `quantity_changed #${action.id} ${action.delta > 0 ? '+' : ''}${action.delta}`
-    case 'removed':
-      return `removed #${action.id}`
-    case 'reset':
-      return 'reset'
-  }
-}
-
 function Cart() {
-  const [state, dispatch] = useReducer(reducer, initial)
+  const [state, dispatch] = useReducer(cartReducer, initial)
   const total = state.lines.reduce((sum, l) => sum + l.qty * l.price, 0)
 
   return (
@@ -86,7 +36,7 @@ function Cart() {
               Nothing in the cart. Add an item to dispatch the first action.
             </p>
           ) : (
-            <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            <ul aria-label="Cart" className="divide-y divide-zinc-200 dark:divide-zinc-800">
               {state.lines.map((l) => (
                 <li key={l.id} className="flex items-center justify-between gap-3 py-3 text-sm">
                   <span className="text-zinc-800 dark:text-zinc-200">{l.name}</span>
@@ -130,7 +80,9 @@ function Cart() {
 
       <div className="flex flex-col">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">Dispatched actions</span>
+          <span id="cart-log-label" className="text-xs text-zinc-500 dark:text-zinc-400">
+            Dispatched actions
+          </span>
           <Button
             variant="secondary"
             className="px-3 py-1 text-xs"
@@ -140,7 +92,10 @@ function Cart() {
             <ArrowCounterClockwiseIcon size={12} weight="bold" /> reset
           </Button>
         </div>
-        <ol className="mt-3 max-h-56 flex-1 overflow-y-auto rounded-surface bg-zinc-100 p-3 font-mono text-[13px] leading-6 text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">
+        <ol
+          aria-labelledby="cart-log-label"
+          className="mt-3 max-h-56 flex-1 overflow-y-auto rounded-surface bg-zinc-100 p-3 font-mono text-[13px] leading-6 text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300"
+        >
           {state.log.length === 0 ? (
             <li className="text-zinc-400 dark:text-zinc-600">(empty)</li>
           ) : (
@@ -174,7 +129,7 @@ export function ReducerDemo() {
   | { type: 'removed'; id: number }
   | { type: 'reset' }
 
-const [state, dispatch] = useReducer(reducer, initial)`}</Code>
+const [state, dispatch] = useReducer(cartReducer, initial)`}</Code>
         <div className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
           <p>
             The rule of thumb: reach for <span className="font-mono text-[13px]">useReducer</span>{' '}
