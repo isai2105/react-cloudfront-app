@@ -11,7 +11,9 @@
   },
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/write-build-info.mjs",
     "build": "tsc -b && vite build",
+    "check:dist": "node scripts/check-dist.mjs",
     "lint": "oxlint",
     "preview": "vite preview"
   },
