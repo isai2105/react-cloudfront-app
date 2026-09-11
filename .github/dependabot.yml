@@ -1,0 +1,138 @@
+# Dependabot, for the two ecosystems this repository has: the npm packages in
+# package.json and the `uses:` pins in .github/workflows/.
+#
+# Both are pinned in ways nothing else moves. A `uses:` is a full commit SHA
+# (rule 1 in ci.yml's header), and the lockfile fixes every npm package to one
+# version; this file is what proposes the moves. What it does not change is the
+# obligation beside each actions bump — rule 2, `using: node24` at the new SHA,
+# which no tool holds and a person checks on the pull request.
+#
+# Every pull request title this file produces must pass the `pr-title` check in
+# ci.yml, `^(feat|fix|docs|style|refactor|test|build|ci|chore|perf|revert)(\([^()]+\))?!?: .+$`,
+# because that title becomes the squashed commit subject on `main`. The
+# `commit-message` blocks below are written to satisfy it — `prefix` without a
+# colon (Dependabot appends `(scope): ` itself; `prefix: 'chore:'` would produce
+# `chore:(deps): `, which does not match) and `include: scope`, so titles read
+# `chore(deps): …`, `chore(deps-dev): …` and `ci(deps): …`.
+#
+# Version updates need nothing switched on anywhere; this file enables them.
+# Dependabot alerts and security updates are separate repository settings.
+
+version: 2
+
+updates:
+  - package-ecosystem: 'npm'
+    # pnpm is detected from the lockfile; `/` is where package.json is.
+    directory: '/'
+
+    schedule:
+      interval: 'weekly'
+      # The same slot as terraform-aws-static-site's Dependabot, so the two
+      # repositories' bumps arrive in one maintenance sitting. Early in the
+      # week so a failure gets the week rather than a weekend.
+      day: 'tuesday'
+      time: '04:23'
+      # Written down rather than inherited: Etc/UTC is the default, and a
+      # default that moves is one this file would not notice moving.
+      timezone: 'Etc/UTC'
+
+    # Seven days of aging before a freshly published version can be proposed.
+    # zizmor's `dependabot-cooldown` audit (offline, default persona — inside
+    # `pnpm lint:workflows` and the required `workflow-lint` check) reports
+    # anything under seven as a medium finding, and the posture is defensible
+    # on its own terms: a version that is pulled or patched in its first week
+    # never reaches a pull request here. The cost is latency — up to about
+    # fourteen days from publication to pull request, worst case — which is
+    # affordable for version updates and would not be for a security update,
+    # a different Dependabot feature.
+    cooldown:
+      default-days: 7
+
+    # `prefix-development` applies to npm (unlike `github-actions`): a pull
+    # request touching only devDependencies is titled `chore(deps-dev): …`,
+    # one touching a runtime dependency `chore(deps): …`. Both are `chore`
+    # because a dependency bump is neither a feature nor a fix of this app.
+    commit-message:
+      prefix: 'chore'
+      prefix-development: 'chore'
+      include: 'scope'
+
+    # Groups are matched in order; a dependency lands in the first group it
+    # fits. The named groups isolate packages that must move together — a
+    # bump of one without the other fails `pnpm install` or the type-aware
+    # lint — so that a bump one of them cannot yet take does not hold every
+    # other dependency's pull request hostage. The two catch-alls at the end
+    # take everything else, split by dependency type so the title scope
+    # (`deps` / `deps-dev`) is honest.
+    #
+    # `open-pull-requests-limit` is not set: five groups is at most five open
+    # pull requests, which is the default limit, and a number repeating it
+    # here could only be wrong.
+    groups:
+      # `@vitest/coverage-v8` declares an exact peer on `vitest` (5.0.0 wants
+      # `vitest: 5.0.0`, no range), so the two can only be bumped in one pull
+      # request.
+      vitest:
+        patterns:
+          - 'vitest'
+          - '@vitest/*'
+      # `react` and `react-dom` must match to the patch, and the two type
+      # packages track them.
+      react:
+        patterns:
+          - 'react'
+          - 'react-dom'
+          - '@types/react'
+          - '@types/react-dom'
+      # The type-aware lint layer: `typescript-eslint` declares the `eslint`
+      # majors and the `typescript` range it supports, and
+      # `eslint-plugin-react-hooks` declares its `eslint` peer. A bump of one
+      # alone can leave `pnpm lint` unable to load its config.
+      eslint:
+        patterns:
+          - 'eslint'
+          - '@eslint/*'
+          - 'typescript-eslint'
+          - '@typescript-eslint/*'
+          - 'eslint-plugin-*'
+          - 'typescript'
+      production-dependencies:
+        dependency-type: 'production'
+      development-dependencies:
+        dependency-type: 'development'
+
+  - package-ecosystem: 'github-actions'
+    # `/` is the whole repository for this ecosystem; Dependabot reads
+    # .github/workflows/ from it.
+    directory: '/'
+
+    schedule:
+      interval: 'weekly'
+      day: 'tuesday'
+      time: '04:23'
+      timezone: 'Etc/UTC'
+
+    # As above: the `dependabot-cooldown` finding, and the same posture.
+    cooldown:
+      default-days: 7
+
+    # `ci(deps): …`. `prefix-development` is not set: it is documented for
+    # Bundler, Composer, Mix, Maven, npm, pip and uv, never for
+    # `github-actions`, so a line here would have no reader.
+    commit-message:
+      prefix: 'ci'
+      include: 'scope'
+
+    # One pull request for every action rather than one per action: one run
+    # of the checks, and one pass of the obligation no tool holds — rule 2's
+    # `using: node24` at each new SHA — per week rather than per action.
+    groups:
+      actions:
+        patterns:
+          - '*'
+
+# `labels:` is deliberately absent on both. Dependabot creates its default
+# `dependencies` and per-ecosystem labels only when no custom list is given;
+# a custom list is intersected with the labels the repository already has, and
+# this repository has none of them, so writing one would leave the pull
+# requests unlabelled.

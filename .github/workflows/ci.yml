@@ -1,0 +1,305 @@
+# The pull-request pipeline, and the only workflow that builds this app.
+#
+# Three jobs. `ci` is the build: install, lint, format, typecheck, unit tests,
+# `pnpm build`, the dist audit against the deploy contract, and the Playwright
+# preview suite against `vite preview` under the live CSP. `pr-title` gates the
+# squash-commit subject. `workflow-lint` audits the files in this directory.
+# All three are meant to be required checks on `main`; none needs a secret, a
+# role or a network beyond public registries, GitHub releases and Docker Hub,
+# which is what lets them run on a pull request from a fork.
+#
+# On a push to `main` the `ci` job additionally uploads `dist/` as the artifact
+# named `dist`. That artifact is the promotion input for deploy.yml — a deploy
+# is "take the `dist` from `main` run N and sync it", never a rebuild — so a
+# pull request never uploads one: `check:dist` is what guards a pull request,
+# and the artifact is the record of what `main` produced.
+#
+# ---------------------------------------------------------------------------
+# Hardening
+# ---------------------------------------------------------------------------
+#
+# The six rules every workflow here follows are the ones argued at length in
+# the header of the sibling repository's validate.yml:
+#
+#   https://github.com/isai2105/terraform-aws-static-site/blob/main/.github/workflows/validate.yml
+#
+# They are not re-argued in this file; what is stated is the list and who holds
+# each rule in this repository, because a green check reads as if it had read
+# the whole list and it has not (measured against zizmor 1.30.1 and actionlint
+# 1.7.12, the versions the `workflow-lint` job pins):
+#
+#   1. every `uses:` is a full commit SHA with the version tag as a comment
+#      — zizmor `unpinned-uses`, offline, in `workflow-lint`. That the comment
+#      matches the SHA is `ref-version-mismatch`, which needs the GitHub API
+#      and does not run here; the SHAs below were produced by dereferencing
+#      each tag through the API when they were written.
+#   2. every pinned SHA declares `using: node24` in its own action.yml
+#      — no tool; checked by hand when a pin is written or bumped. Node 20 is
+#      removed from GitHub-hosted runners on 23 September 2026.
+#   3. `permissions: {}` at workflow level, the minimum per job
+#      — zizmor `excessive-permissions`.
+#   4. `runs-on: ubuntu-24.04`, never `ubuntu-latest`
+#      — no tool; review.
+#   5. `timeout-minutes` on every job
+#      — no tool; review.
+#   6. every checkout sets `persist-credentials: false`
+#      — zizmor `artipacked`, which at the default persona reports an
+#      *omitted* `persist-credentials` (the realistic drift); an explicit
+#      `persist-credentials: true` is only reported at `--persona auditor`.
+#
+# actionlint holds none of the six: it checks syntax, expressions and, through
+# shellcheck, the `run:` blocks. A mistyped `permissions:` key is its finding;
+# an over-broad one is zizmor's.
+
+name: ci
+
+on:
+  pull_request:
+    # `edited` matters: without it a pull request whose title was rejected and
+    # then corrected would never be re-checked by `pr-title`.
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [main]
+
+# Nothing by default, granted back one job at a time below. Rule 3.
+permissions: {}
+
+# Pull-request runs share a group per ref and cancel the superseded one — its
+# result would describe a commit nobody can merge any more. A `main` run never
+# shares a group (the key is its own SHA), so it is neither cancelled nor
+# queued behind another: GitHub cancels a *pending* run in a group when a
+# newer one arrives regardless of `cancel-in-progress`, and each `main` run
+# uploads the `dist` artifact deploy.yml promotes — a cancelled one would be a
+# `main` commit with no deployable build.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Everything the repository can check about itself with no infrastructure:
+  # the same commands the git hooks run (see lint-staged.config.js and
+  # .husky/pre-push), repo-wide, plus the build and the two checks that need
+  # a built dist/ — `check:dist` and the preview Playwright suite.
+  ci:
+    name: ci
+    runs-on: ubuntu-24.04
+    # Loose on purpose: a browser install plus a build plus two test suites is
+    # a few minutes on a warm cache and more on a cold one, and a timeout that
+    # fires on a slow success is worse than none. What this bounds is a hung
+    # `vite preview` or a wedged runner, not a slow one.
+    timeout-minutes: 20
+    permissions:
+      # The checkout. `actions/upload-artifact` needs no permission of its
+      # own; artifacts are written with the job's token regardless.
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Rule 6. Nothing here pushes, so nothing needs the token in
+          # .git/config where every later step could read it.
+          persist-credentials: false
+
+      # No `version:` input: the action reads `packageManager` from
+      # package.json, which is the one place the pnpm version is written
+      # (Corepack and the lockfile read the same field). Ordered before
+      # setup-node because `cache: pnpm` below shells out to `pnpm store path`.
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # The same pin `nvm use` reads locally; `engines.node` in
+          # package.json is the range it must satisfy (`engine-strict` is on).
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        # `--frozen-lockfile` is pnpm's default in CI, written out because a
+        # lockfile that CI silently rewrote is a lockfile nobody reviewed.
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Check formatting
+        # The repo-wide net lint-staged.config.js defers to: the hook formats
+        # staged files, this catches anything that reached the tree another
+        # way.
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build
+        # `pnpm build`, never `vite build` directly: the `prebuild` script is
+        # what stamps public/build-info.json with GITHUB_SHA, and deploy.yml's
+        # post-deploy check compares that stamp with what the CDN serves.
+        run: pnpm build
+
+      - name: Check dist against the deploy contract
+        # scripts/check-dist.mjs: no inline script or style, hashed asset
+        # names, no remote origins, a well-formed build-info.json. This is the
+        # gate for a pull request; the artifact upload below is not.
+        run: pnpm check:dist
+
+      - name: Install Playwright browsers
+        # Chromium only — both Playwright configs pin `browserName: chromium`.
+        # `--with-deps` installs the OS packages with sudo, which GitHub-hosted
+        # runners allow without a password.
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Preview end-to-end tests
+        # playwright.config.ts starts `vite preview` on dist/ and serves it
+        # under csp.txt, so the suite exercises the exact bytes `main` would
+        # upload, under the exact policy the CDN would apply.
+        run: pnpm e2e:preview
+
+      - name: Upload the Playwright report
+        # Only on failure: the HTML report is what a red run needs and what a
+        # green one never opens. Short retention — it describes a commit that
+        # is about to be fixed. `${{ github.run_attempt }}` in the name so a
+        # re-run of a failed job does not collide with the first attempt's
+        # upload.
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report-${{ github.run_attempt }}
+          path: playwright-report
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload dist as the deployable artifact
+        # The only `main`-conditional step in the file. `push` here can only
+        # be a push to `main` (see `on:`), and the ref check is written out
+        # anyway so the condition reads as what it means.
+        #
+        # The name is exactly `dist` — deploy.yml downloads it by that name
+        # from the run id it is given. `retention-days: 90` is the repository
+        # default and, for a public repository, the maximum; it is written out
+        # because it is the rollback window: a redeploy by `run_id` works for
+        # 90 days, after which an older target is a rebuild from the tagged
+        # commit, treated as a new deploy.
+        #
+        # `overwrite: true` because a re-run of a green `main` job is a rebuild
+        # of the same commit under a frozen lockfile — build-info.json carries
+        # the same `sha`, only `builtAt` moves — and without it the re-run goes
+        # red on "artifact already exists", which deploy.yml's provenance check
+        # (`conclusion == success`) would then refuse to promote until the next
+        # commit.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist
+          retention-days: 90
+          overwrite: true
+          # An empty dist/ after a green build is a pipeline bug, not a
+          # deployable.
+          if-no-files-found: error
+
+  # The pull request title becomes the subject of the squashed commit, so it is
+  # checked with the same rigour as the code — the same eleven types
+  # commitlint.config.js enforces on local subjects, which never reach `main`.
+  # Skipped on push, where there is no pull request to read a title from; main
+  # only ever receives commits through a pull request, so the title has always
+  # been checked by then.
+  pr-title:
+    name: pr-title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # The only job here that checks nothing out and calls no API: the title it
+    # reads arrives in the event payload, which is not a resource a token
+    # grants access to. So it keeps the workflow-level nothing.
+    permissions: {}
+    steps:
+      - name: Check the title against Conventional Commits
+        env:
+          # Passed through the environment, never interpolated into the script:
+          # a title is attacker-controlled text and `${{ ... }}` would splice it
+          # straight into the shell.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|docs|style|refactor|test|build|ci|chore|perf|revert)(\([^()]+\))?!?: .+$'
+          if printf '%s' "$PR_TITLE" | grep -Eq "$pattern"; then
+            echo "ok: $PR_TITLE"
+            exit 0
+          fi
+          {
+            echo "The pull request title is not a Conventional Commit."
+            echo
+            echo "  title:    $PR_TITLE"
+            echo "  expected: <type>[(scope)][!]: <subject>"
+            echo "  types:    feat fix docs style refactor test build ci chore perf revert"
+            echo
+            echo "  example:  ci: add pull-request pipeline, workflow linting and dependabot"
+          } >&2
+          exit 1
+
+  # The hardening at the top of this file, checked rather than remembered, plus
+  # the syntax and shell checks zizmor does not do. The same two commands as
+  # `pnpm lint:workflows` locally, at the same versions.
+  #
+  # zizmor runs `--offline`: it selects offline or online mode from whether a
+  # GitHub token is in the environment, and the mode moves the verdict. Offline
+  # is what a contributor's shell sees and what a required check should be —
+  # the online audits (`ref-version-mismatch`, `impostor-commit`,
+  # `known-vulnerable-actions`) read GitHub's API and advisory database, and a
+  # required check that can go red without a commit is a check people learn to
+  # ignore. `--strict-collection` turns a file zizmor could not parse into a
+  # failure rather than a skip.
+  #
+  # Both tools are installed from their releases at a pinned version rather
+  # than through a marketplace action: `zizmorcore/zizmor-action` takes its
+  # flags as `with:` inputs, so the local script could not run the same
+  # command, and its SARIF upload asks for `security-events: write` to publish
+  # a report nothing here reads. actionlint's official image is pinned by
+  # digest and ships shellcheck, which actionlint picks up off PATH to check
+  # the `run:` blocks above; zizmor's release publishes archives and no
+  # checksum file, so its pin is the tag alone — a truncated download fails in
+  # `tar`, and a binary that is not the pinned one fails the version check.
+  workflow-lint:
+    name: workflow-lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # The two pins. Bump them here and `brew upgrade` locally; the versions
+      # named in the header comment above are these.
+      ZIZMOR_VERSION: 1.30.1
+      ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install zizmor
+        # The archive holds the binary alone. Its directory goes on PATH rather
+        # than into a system one, so no step here needs to be root.
+        run: |
+          workdir="$(mktemp -d)"
+          archive="zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          curl --fail --silent --show-error --location \
+            --output "${workdir}/${archive}" \
+            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/${archive}"
+          tar -xzf "${workdir}/${archive}" -C "${workdir}" zizmor
+          echo "${workdir}" >> "$GITHUB_PATH"
+          test "$("${workdir}/zizmor" --version)" = "zizmor ${ZIZMOR_VERSION}"
+
+      - name: Audit the workflows with zizmor
+        # `.` rather than this directory: zizmor collects .github/workflows/
+        # and .github/dependabot.yml from a repository root, and the
+        # `dependabot-cooldown` audit only sees the latter this way.
+        run: zizmor --offline --strict-collection .
+
+      - name: Lint the workflows with actionlint
+        run: |
+          docker run --rm --entrypoint shellcheck "$ACTIONLINT_IMAGE" --version
+          docker run --rm -v "$PWD:/repo:ro" --workdir /repo "$ACTIONLINT_IMAGE" -color -verbose

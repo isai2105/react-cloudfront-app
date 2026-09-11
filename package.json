@@ -20,6 +20,7 @@
     "lint:fix": "oxlint --fix --deny-warnings && eslint . --fix --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "lint:workflows": "zizmor --offline --strict-collection . && actionlint",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
