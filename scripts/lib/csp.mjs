@@ -43,3 +43,29 @@ export function normalizeCsp(policy) {
     .map(([name, sources]) => [name, ...sources].join(' '))
     .join('; ')
 }
+
+/**
+ * Directive-level differences between two policies, for a failure message
+ * that names what moved rather than two 175-character strings to eyeball.
+ * Empty when the normalised forms are equal.
+ *
+ * @param {string} expected
+ * @param {string} actual
+ * @returns {string[]}
+ */
+export function diffCsp(expected, actual) {
+  const want = parseCsp(expected)
+  const got = parseCsp(actual)
+  /** @type {string[]} */
+  const lines = []
+  for (const name of [...new Set([...want.keys(), ...got.keys()])].sort()) {
+    const w = want.get(name)
+    const g = got.get(name)
+    if (w === undefined) lines.push(`unexpected directive: ${[name, ...(g ?? [])].join(' ')}`)
+    else if (g === undefined) lines.push(`missing directive:    ${[name, ...w].join(' ')}`)
+    else if (w.join(' ') !== g.join(' ')) {
+      lines.push(`${name}: expected [${w.join(' ')}], live [${g.join(' ')}]`)
+    }
+  }
+  return lines
+}

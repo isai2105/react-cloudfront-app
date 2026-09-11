@@ -16,6 +16,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "check:dist": "node scripts/check-dist.mjs",
+    "check:csp": "node scripts/check-csp.mjs",
+    "verify:deploy": "node scripts/verify-deploy.mjs",
     "lint": "oxlint --deny-warnings && eslint . --max-warnings 0",
     "lint:fix": "oxlint --fix --deny-warnings && eslint . --fix --max-warnings 0",
     "format": "prettier --write .",

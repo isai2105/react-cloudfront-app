@@ -1,0 +1,100 @@
+# The live Playwright suite (e2e/live/) against a deployed distribution.
+#
+# One job, two ways in. `workflow_call` is how deploy.yml runs it after a
+# deploy; `workflow_dispatch` is how a person runs it against an environment
+# that is already standing, without redeploying. Both take the same
+# `site_url` and share the one job below, so there is exactly one definition
+# of what "verified live" means.
+#
+# `site_url` is an input, not a discovery. The job reads no SSM parameter and
+# assumes no role, which is what lets it run with `contents: read` and no
+# OIDC grant — the same suite a contributor runs locally with
+# PLAYWRIGHT_BASE_URL set, on a runner.
+#
+# The six hardening rules, and who holds each, are listed in ci.yml's header;
+# `workflow-lint` there audits this file with the same two tools.
+
+name: e2e-live
+
+on:
+  workflow_call:
+    inputs:
+      site_url:
+        description: The deployed site, scheme-qualified (the `site_url` SSM parameter)
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      site_url:
+        description: The deployed site, scheme-qualified (the `site_url` SSM parameter)
+        type: string
+        required: true
+
+permissions: {}
+
+# One suite per site at a time. Called from deploy.yml the run already sits in
+# that workflow's per-environment group; this covers the dispatched route, so
+# a second dispatch against the same site queues behind the first rather than
+# writing a second report over it. `cancel-in-progress: false` because a run
+# that has started should finish and say what it found.
+concurrency:
+  group: e2e-live-${{ inputs.site_url }}
+  cancel-in-progress: false
+
+jobs:
+  e2e-live:
+    name: e2e-live
+    runs-on: ubuntu-24.04
+    # A browser suite against a CDN, not a waiter: the browser install and the
+    # dependency install dominate, and the suite itself is seconds.
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check the site URL
+        # Before two minutes of installs. The contract publishes `site_url`
+        # as `https://` plus a hostname (§2), and the suite's header
+        # assertions only make sense against that.
+        env:
+          SITE_URL: ${{ inputs.site_url }}
+        run: |
+          case "$SITE_URL" in
+            https://*) echo "testing $SITE_URL" ;;
+            *) echo "::error::site_url must be an https:// URL, got '$SITE_URL'"; exit 1 ;;
+          esac
+
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Live end-to-end tests
+        # playwright.live.config.ts: no webServer, no build — a checkout that
+        # has never run `pnpm build` is the intended state here.
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ inputs.site_url }}
+        run: pnpm e2e:live
+
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report-live-${{ github.run_attempt }}
+          path: playwright-report
+          retention-days: 7
+          if-no-files-found: ignore
