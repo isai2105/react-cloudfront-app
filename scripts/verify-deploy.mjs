@@ -10,14 +10,14 @@
 //      assertion that falsifies "the sync landed in the wrong prefix" and
 //      "the document references a chunk that was never uploaded";
 //   3. `/build-info.json` returns 200 and its `sha` equals the one in the
-//      artefact that was uploaded — §4.3's point that `GET / → 200` proves
+//      artifact that was uploaded — §4.3's point that `GET / → 200` proves
 //      the distribution works, not that this build is live, because the
 //      module seeds a placeholder document.
 //
 // The comparison is against DIST_DIR/build-info.json — the downloaded
-// artefact — and never against the deploying commit: a deploy promotes an
+// artifact — and never against the deploying commit: a deploy promotes an
 // older `main` build on purpose (a rollback is a redeploy by `run_id`), and
-// the stamp inside the artefact is the only statement of what was promoted.
+// the stamp inside the artifact is the only statement of what was promoted.
 //
 // Usage: SITE_URL=https://example.cloudfront.net DIST_DIR=dist node scripts/verify-deploy.mjs
 
@@ -72,7 +72,7 @@ async function get(url) {
 }
 
 /**
- * The `sha` of a build-info.json, from the artefact on disk or from the site.
+ * The `sha` of a build-info.json, from the artifact on disk or from the site.
  *
  * @param {string} text
  * @param {string} source
@@ -108,7 +108,7 @@ try {
   )
 } catch (error) {
   fail(
-    `cannot read the promoted artefact: ${error instanceof Error ? error.message : String(error)}`,
+    `cannot read the promoted artifact: ${error instanceof Error ? error.message : String(error)}`,
   )
 }
 
@@ -145,7 +145,7 @@ const stamp = await get(new URL('/build-info.json', site))
 if (stamp.status !== 200) fail(`GET /build-info.json returned ${stamp.status}, expected 200`)
 const live = stampedSha(await stamp.text(), 'live /build-info.json')
 if (live !== promoted) {
-  fail(`live build-info.json sha ${live} is not the promoted artefact's ${promoted}`)
+  fail(`live build-info.json sha ${live} is not the promoted artifact's ${promoted}`)
 }
 console.log(`ok   GET /build-info.json → 200, sha ${live} is the promoted build`)
 console.log(`\nverify-deploy: ${site.origin} is serving the promoted build`)

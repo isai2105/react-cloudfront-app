@@ -11,6 +11,14 @@
 # OIDC grant — the same suite a contributor runs locally with
 # PLAYWRIGHT_BASE_URL set, on a runner.
 #
+# `expected_sha` is optional. deploy.yml passes the commit it just promoted
+# and the suite then asserts the live build-info.json names it — the
+# difference between "a build is served" and "the build we deployed is
+# served". A dispatch may leave it empty and gets the shape check only,
+# because a person checking a standing environment does not always know
+# which commit should be on it; that is the same choice the spec makes for
+# a local run with EXPECTED_SHA unset.
+#
 # The six hardening rules, and who holds each, are listed in ci.yml's header;
 # `workflow-lint` there audits this file with the same two tools.
 
@@ -23,12 +31,22 @@ on:
         description: The deployed site, scheme-qualified (the `site_url` SSM parameter)
         type: string
         required: true
+      expected_sha:
+        description: The 40-hex commit the live build-info.json must name (empty = shape check only)
+        type: string
+        required: false
+        default: ''
   workflow_dispatch:
     inputs:
       site_url:
         description: The deployed site, scheme-qualified (the `site_url` SSM parameter)
         type: string
         required: true
+      expected_sha:
+        description: The 40-hex commit the live build-info.json must name (empty = shape check only)
+        type: string
+        required: false
+        default: ''
 
 permissions: {}
 
@@ -51,17 +69,28 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Check the site URL
+      - name: Check the inputs
         # Before two minutes of installs. The contract publishes `site_url`
         # as `https://` plus a hostname (§2), and the suite's header
-        # assertions only make sense against that.
+        # assertions only make sense against that. `expected_sha`, when
+        # given, must be a full commit sha: anything shorter is a comparison
+        # the stamp can never satisfy, so it is refused here rather than
+        # reported as a failed test.
         env:
           SITE_URL: ${{ inputs.site_url }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
           case "$SITE_URL" in
             https://*) echo "testing $SITE_URL" ;;
             *) echo "::error::site_url must be an https:// URL, got '$SITE_URL'"; exit 1 ;;
           esac
+          if [ -z "$EXPECTED_SHA" ]; then
+            echo "no expected_sha: build-info.json gets the shape check only"
+          elif printf '%s' "$EXPECTED_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "expecting build-info.json to name $EXPECTED_SHA"
+          else
+            echo "::error::expected_sha must be a 40-hex commit sha, got '$EXPECTED_SHA'"; exit 1
+          fi
 
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -86,9 +115,19 @@ jobs:
       - name: Live end-to-end tests
         # playwright.live.config.ts: no webServer, no build — a checkout that
         # has never run `pnpm build` is the intended state here.
+        #
+        # EXPECTED_SHA is exported only when the input is non-empty: the spec
+        # keys on the variable being *unset*, and an empty string would be an
+        # assertion that the live sha is "".
         env:
           PLAYWRIGHT_BASE_URL: ${{ inputs.site_url }}
-        run: pnpm e2e:live
+          EXPECTED_SHA_INPUT: ${{ inputs.expected_sha }}
+        run: |
+          if [ -n "$EXPECTED_SHA_INPUT" ]; then
+            export EXPECTED_SHA="$EXPECTED_SHA_INPUT"
+            echo "asserting live build-info.json sha == $EXPECTED_SHA"
+          fi
+          pnpm e2e:live
 
       - name: Upload the Playwright report
         if: failure()

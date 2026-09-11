@@ -39,13 +39,17 @@ to git history.
     `contents: read` and `actions: read` (§1).
   - **Workflow inputs.** `deploy.yml` is `workflow_dispatch` only, with `environment`
     (`stage` | `prod`) and `run_id` (a green `ci` push run on `main`). `e2e-live.yml` takes
-    `site_url`, from `deploy.yml` as a called workflow or by hand.
+    `site_url`, from `deploy.yml` as a called workflow or by hand, and an optional
+    `expected_sha`: `deploy.yml` passes the promoted commit and the live suite asserts the served
+    `build-info.json` names it; a dispatch may leave it empty for the shape check only.
   - **Repository variables** the deploy reads: `AWS_ACCOUNT_ID` and `AWS_REGION`. Both must be
     set before the first dispatch.
 
 ### Not recorded here
 
 Everything else that landed in the scaffold — the toolchain pins, the two linters, Prettier, the
-git hooks and commit convention, the Vitest and Playwright suites, `check-dist.mjs`, Dependabot
-and the CI job layout — is internal: it changes how this repository is worked on, not what the
-other repository or an operator can observe.
+git hooks and commit convention, the Vitest and Playwright suites, `check-dist.mjs`, Dependabot,
+the CI job layout and the repository settings (the ruleset on `main`, squash-only merges,
+`sha_pinning_required`, CodeQL default setup; README "Repository settings") — is internal: it
+changes how this repository is worked on, not what the other repository or an operator can
+observe.
