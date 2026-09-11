@@ -1,0 +1,26 @@
+# Dependencies and build output
+node_modules
+dist
+
+# Written by scripts/write-build-info.mjs (the `prebuild` step) on every build;
+# Vite copies it into dist/. Generated, never hand-edited.
+public/build-info.json
+
+# Playwright output (e2e/preview and e2e/live suites)
+test-results/
+playwright-report/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Local overrides
+*.local
+
+# Editor and OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store

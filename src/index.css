@@ -1,0 +1,41 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+/*
+  One palette, one accent, one radius scale.
+  Neutral: zinc. Accent: a desaturated teal, used identically everywhere.
+  Radius: soft (12px) for surfaces, full for pills and buttons.
+*/
+@theme {
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, monospace;
+
+  --color-accent-50: oklch(0.97 0.02 190);
+  --color-accent-100: oklch(0.93 0.04 190);
+  --color-accent-200: oklch(0.87 0.07 190);
+  --color-accent-500: oklch(0.62 0.10 190);
+  --color-accent-600: oklch(0.55 0.10 190);
+  --color-accent-700: oklch(0.47 0.09 190);
+  --color-accent-900: oklch(0.30 0.06 190);
+
+  --radius-surface: 12px;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    @apply bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100;
+  }
+  ::selection {
+    @apply bg-accent-200 text-zinc-900;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+}
