@@ -15,7 +15,16 @@ import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
   {
-    ignores: ['dist', 'node_modules', '.claude', 'public/build-info.json'],
+    ignores: [
+      'dist',
+      'node_modules',
+      '.claude',
+      'public/build-info.json',
+      // Generated reports (vitest --coverage, playwright) carry their own JS.
+      'coverage',
+      'test-results',
+      'playwright-report',
+    ],
   },
   {
     // Type-aware rules apply to every file a tsconfig project knows about
