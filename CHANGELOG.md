@@ -44,6 +44,10 @@ to git history.
     `build-info.json` names it; a dispatch may leave it empty for the shape check only.
   - **Repository variables** the deploy reads: `AWS_ACCOUNT_ID` and `AWS_REGION`. Both must be
     set before the first dispatch.
+  - **The §9 evidence.** A successful `deploy.yml` run writes to its job summary the run link,
+    the date, the identity STS reports, the three parameter values it read and the "Verified on
+    … by assuming … run #N" sentence in the contract's own words — what the infrastructure
+    repository pastes into DEPLOY_CONTRACT.md §9 to close its placeholder.
 
 ### Not recorded here
 

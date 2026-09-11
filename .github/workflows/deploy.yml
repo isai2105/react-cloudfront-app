@@ -14,9 +14,10 @@
 # saying an environment is standing.
 #
 # Two jobs. `deploy` assumes the deploy role, discovers the environment from
-# SSM, gates on the live CSP, syncs in the contract's order and verifies what
-# is served. `e2e-live` then runs the browser suite through e2e-live.yml with
-# `contents: read` and nothing else — the OIDC grant stops at the first job.
+# SSM, gates on the live CSP, syncs in the contract's order, verifies what
+# is served and writes the §9 evidence to its job summary. `e2e-live` then
+# runs the browser suite through e2e-live.yml with `contents: read` and
+# nothing else — the OIDC grant stops at the first job.
 #
 # The six hardening rules, and who holds each, are listed in ci.yml's header;
 # `workflow-lint` there audits this file with the same two tools.
@@ -294,6 +295,52 @@ jobs:
           SITE_URL: ${{ steps.discover.outputs.site_url }}
           DIST_DIR: dist
         run: node scripts/verify-deploy.mjs
+
+      - name: Record the evidence
+        # What DEPLOY_CONTRACT.md §9 asks this job, and only this job, to
+        # produce: the run, the date, and the three parameter values the run
+        # actually read, in the sentence that document carries as a
+        # placeholder until an operator pastes this one in. Written to the
+        # job summary rather than the log so it survives log expiry and is
+        # readable without expanding a step. `if: success()` is the default,
+        # spelled out: a deploy that failed anywhere above must leave no
+        # evidence block, or a reader skimming summaries takes a red run as
+        # verified. The identity line comes from STS rather than from the
+        # composed ARN above, so it names the role that was assumed and not
+        # the one that was asked for. None of this is secret — the three
+        # values are plain-String SSM identifiers the contract itself lists,
+        # and the account id is already unmasked (header).
+        if: success()
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_SHA: ${{ steps.provenance.outputs.head_sha }}
+          BUCKET: ${{ steps.discover.outputs.bucket }}
+          DIST: ${{ steps.discover.outputs.distribution }}
+          SITE_URL: ${{ steps.discover.outputs.site_url }}
+        run: |
+          identity="$(aws sts get-caller-identity --query Arn --output text)"
+          today="$(date -u +%Y-%m-%d)"
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          {
+            echo "## Deploy evidence (DEPLOY_CONTRACT.md §9)"
+            echo
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Environment | \`${ENVIRONMENT}\` |"
+            echo "| Verified at | \`${now}\` |"
+            echo "| This run | ${RUN_URL} |"
+            echo "| Promoted \`ci\` run | #${RUN_ID}, commit \`${HEAD_SHA}\` |"
+            echo "| Identity (STS) | \`${identity}\` |"
+            echo "| \`/static-site/${ENVIRONMENT}/bucket_name\` | \`${BUCKET}\` |"
+            echo "| \`/static-site/${ENVIRONMENT}/cloudfront_distribution_id\` | \`${DIST}\` |"
+            echo "| \`/static-site/${ENVIRONMENT}/site_url\` | \`${SITE_URL}\` |"
+            echo
+            echo "For §9, verbatim:"
+            echo
+            echo "> Verified on ${today} by assuming \`react-cloudfront-app-deploy-${ENVIRONMENT}\`" \
+                 "from \`react-cloudfront-app\` run #${GITHUB_RUN_ID} and reading all three parameters."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "evidence written to the job summary: ${RUN_URL}"
 
   # The browser suite, as a called workflow so a person can also run it
   # against a standing environment without redeploying. A caller job's

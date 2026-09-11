@@ -293,7 +293,12 @@ the 90-day retention. The job:
    and waits for the invalidation;
 7. runs `verify:deploy`: `/` is `200`, every referenced asset is `200`, and the live
    `build-info.json` carries the promoted artifact's `sha` — the artifact's, never the deploying
-   commit's.
+   commit's;
+8. writes the evidence DEPLOY_CONTRACT §9 asks for to the run's **job summary** (the panel above
+   the job list on the run page), on success only: the run link, the date, the identity STS
+   reports, the three parameter values it read, and the §9 sentence verbatim, ready to paste
+   into the contract. That page is where the "verified by run #N" line comes from — no
+   transcription from logs.
 
 A second job then runs the live suite through [`e2e-live.yml`](.github/workflows/e2e-live.yml)
 with `contents: read` and nothing else; the OIDC grant stops at the first job. It passes the
