@@ -31,7 +31,9 @@ export function Stat({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
       <span className="text-xs text-zinc-500 dark:text-zinc-400">{label}</span>
-      <span className="font-mono text-2xl tabular-nums text-zinc-900 dark:text-zinc-50">{value}</span>
+      <span className="font-mono text-2xl text-zinc-900 tabular-nums dark:text-zinc-50">
+        {value}
+      </span>
     </div>
   )
 }

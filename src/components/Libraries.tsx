@@ -101,7 +101,7 @@ export function Libraries() {
         <div
           role="tablist"
           aria-label="State libraries"
-          className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none]"
+          className="flex [scrollbar-width:none] gap-2 overflow-x-auto pb-2"
         >
           {libraries.map((l, i) => (
             <button
@@ -132,7 +132,9 @@ export function Libraries() {
             <h3 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
               {lib.name}
             </h3>
-            <p className="mt-1 font-mono text-[13px] text-accent-700 dark:text-accent-200">{lib.fit}</p>
+            <p className="mt-1 font-mono text-[13px] text-accent-700 dark:text-accent-200">
+              {lib.fit}
+            </p>
             <dl className="mt-6 grid gap-5 text-sm leading-relaxed">
               <div>
                 <dt className="font-medium text-zinc-900 dark:text-zinc-50">Reach for it when</dt>

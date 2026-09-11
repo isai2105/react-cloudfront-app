@@ -14,10 +14,19 @@
     "noEmit": true,
 
     /* Linting */
+    /* Same three flags as tsconfig.app.json, for the same reason. */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* checkJs so `typecheck` (and ESLint's type-aware rules) cover the
+       build/deploy scripts, which are plain ESM by design. */
+    "allowJs": true,
+    "checkJs": true
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "scripts/**/*.mjs"]
 }

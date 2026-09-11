@@ -1,8 +1,36 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
+  // oxlint is the fast, syntactic linter, run first in `pnpm lint` with no
+  // type information. ESLint (eslint.config.js) carries the type-aware layer
+  // oxlint cannot run. Overlap between the two is accepted rather than
+  // hand-pruned — see the header of eslint.config.js.
+  "plugins": ["react", "typescript", "oxc", "import", "jsx-a11y"],
+  // `correctness` is oxlint's default. `suspicious` (code that is probably a
+  // mistake) and `perf` (known-slow patterns) are cheap and rarely wrong;
+  // `pedantic`/`style` are left off so this file does not fight Prettier or
+  // the ESLint layer.
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
+  },
   "rules": {
+    // Hooks rules are the whole reason the React plugin is here.
     "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+    "react/exhaustive-deps": "error",
+    // Vite's Fast Refresh only tracks files whose exports are all components.
+    "react/only-export-components": ["warn", { "allowConstantExport": true }],
+    // The type system is the safety net; these two opt out of it. Enforced on
+    // both linters so the rule holds whichever one a contributor runs first.
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "import/no-cycle": "error",
+    "import/no-duplicates": "error",
+    // `import './index.css'` is how Vite pulls the stylesheet into the graph.
+    "import/no-unassigned-import": ["error", { "allow": ["**/*.css"] }],
+    // The automatic JSX runtime (`jsx: react-jsx` in tsconfig) imports the
+    // factory itself; this rule predates it.
+    "react/react-in-jsx-scope": "off"
+  },
+  "ignorePatterns": ["dist", "node_modules", ".claude", "public/build-info.json"]
 }

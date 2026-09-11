@@ -48,11 +48,15 @@ export function Ladder() {
             className="grid gap-x-12 gap-y-3 md:col-span-2 md:grid-cols-subgrid"
           >
             <div className="flex items-baseline gap-4 md:justify-end md:text-right">
-              <span className="font-mono text-sm text-accent-600 dark:text-accent-200">{i + 1}</span>
+              <span className="font-mono text-sm text-accent-600 dark:text-accent-200">
+                {i + 1}
+              </span>
               <h3 className="text-lg font-medium text-zinc-900 dark:text-zinc-50">{r.title}</h3>
             </div>
             <div className="border-l border-zinc-200 pl-6 md:border-l-0 md:pl-0 dark:border-zinc-800">
-              <p className="max-w-[60ch] leading-relaxed text-zinc-600 dark:text-zinc-400">{r.body}</p>
+              <p className="max-w-[60ch] leading-relaxed text-zinc-600 dark:text-zinc-400">
+                {r.body}
+              </p>
               <pre className="mt-3 overflow-x-auto font-mono text-[13px] text-zinc-800 dark:text-zinc-300">
                 <code>{r.code}</code>
               </pre>

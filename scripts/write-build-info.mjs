@@ -25,6 +25,7 @@ import { writeFile } from 'node:fs/promises'
 const SHA_PATTERN = /^[0-9a-f]{40}$/
 const OUTPUT = new URL('../public/build-info.json', import.meta.url)
 
+/** @param {string[]} args */
 function git(...args) {
   return execFileSync('git', args, { encoding: 'utf8' }).trim()
 }
