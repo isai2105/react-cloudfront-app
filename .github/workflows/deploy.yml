@@ -207,7 +207,7 @@ jobs:
         # action's default, `sts.amazonaws.com` (§1.2). No
         # `role-duration-seconds` — the role caps sessions at one hour, which
         # is also the action's default.
-        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/react-cloudfront-app-deploy-${{ inputs.environment }}
           aws-region: ${{ vars.AWS_REGION }}
